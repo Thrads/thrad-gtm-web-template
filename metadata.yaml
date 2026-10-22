@@ -1,5 +1,5 @@
 homepage: "https://thrad.ai"
-documentation: "https://github.com/Thrads/thrad-gtm-web-template/blob/79d88f161f8055bcce3476e4ce52e5d3f7d97f9c/README.md"
+documentation: "https://github.com/Thrads/thrad-gtm-web-template/blob/3de93f858fe85c9422dfd6f78438a3885b7712be/README.md"
 versions:
-  - sha: 79d88f161f8055bcce3476e4ce52e5d3f7d97f9c
-    changeNotes: "Initial controlled web-template pilot candidate; acceptance pending."
+  - sha: 3de93f858fe85c9422dfd6f78438a3885b7712be
+    changeNotes: "Google import and 12 editor scenarios verified; controlled pilot candidate pending compatible SDK deployment."
