@@ -1,8 +1,4 @@
-___TERMS_OF_SERVICE___
-
-By creating or modifying this file you agree to Google Tag Manager's Community Template Gallery Developer Terms of Service.
-
-___INFO___
+﻿___INFO___
 
 {
   "type": "TAG",
@@ -20,6 +16,7 @@ ___INFO___
     "CONVERSIONS"
   ]
 }
+
 
 ___TEMPLATE_PARAMETERS___
 
@@ -252,6 +249,7 @@ ___TEMPLATE_PARAMETERS___
   }
 ]
 
+
 ___SANDBOXED_JS_FOR_WEB_TEMPLATE___
 
 // GTM sandbox adapter to the existing browser SDK.
@@ -260,6 +258,8 @@ const set = require('setInWindow');
 const granted = require('isConsentGranted');
 const listen = require('addConsentListener');
 const call = require('callInWindow');
+const later = require('callLater');
+const now = require('getTimestampMillis');
 const queue = require('createArgumentsQueue');
 const inject = require('injectScript');
 const storage = require('templateStorage');
@@ -285,13 +285,13 @@ if (mode === 'event') {
   if (eventType === 'purchase') {
     business.order_id = identity(data.orderId);
     const raw = (typeof data.value === 'number' || typeof data.value === 'string') ? makeString(data.value) : '';
-    const match = /^(\d+)(?:\.(\d+))?$/.exec(raw);
+    const match = raw.match('^(\\d+)(?:\\.(\\d+))?$');
     const fraction = match && match[2] || '';
     // Validate the SDK's hundredths range without converting the dispatched value.
     const amount = match ? makeNumber(match[1]) * 100 + makeNumber((fraction + '00').slice(0, 2)) +
       (makeNumber(fraction[2] || '0') >= 5 ? 1 : 0) : -1;
     const currency = typeof data.currency === 'string' ? data.currency.trim().toUpperCase() : '';
-    if (!business.order_id || amount < 0 || amount > 9007199254740991 || !/^[A-Z]{3}$/.test(currency)) {
+    if (!business.order_id || amount < 0 || amount > 9007199254740991 || !currency.match('^[A-Z]{3}$')) {
       data.gtmOnFailure(); return;
     }
     business.value = data.value; business.currency = currency;
@@ -302,8 +302,8 @@ if (mode === 'event') {
       (typeof data.customEventName === 'string' ? data.customEventName.trim().toLowerCase() : '');
     const purchaseNames = ['purchase', 'purchase_completed', 'checkout_completed', 'order', 'order_completed', 'conversion', 'order_created'];
     const standardNames = ['page_viewed', 'contents_viewed', 'items_added', 'checkout_started', 'lead_created', 'registration_completed', 'appointment_scheduled', 'subscription_created', 'trial_started', 'app_installed', 'app_opened', 'custom'];
-    if (!business.event_id || (eventType === 'custom' && (!/^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$/.test(eventName) ||
-        eventName.length > 64 || purchaseNames.indexOf(eventName.replace(/[-\s]+/g, '_')) !== -1 || standardNames.indexOf(eventName) !== -1))) {
+    if (!business.event_id || (eventType === 'custom' && (!eventName.match('^[A-Za-z0-9](?:[A-Za-z0-9_-]*[A-Za-z0-9])?$') ||
+        eventName.length > 64 || purchaseNames.indexOf(eventName.split('-').join('_')) !== -1 || standardNames.indexOf(eventName) !== -1))) {
       data.gtmOnFailure(); return;
     }
   } else { data.gtmOnFailure(); return; }
@@ -416,19 +416,23 @@ const finish = (ok) => {
   state.waiters = [];
   waiters.forEach((waiter) => { if (ok) waiter.success(); else waiter.failure(); });
 };
-if (existing) {
-  // The manual snippet owns its script request. Never insert another SDK.
-  // Bounded wait: a stale stub reports failure instead of hanging GTM forever.
-  let remaining = 100;
+// The CDN entrypoint can itself load a versioned SDK. Its script onload is
+// not SDK readiness. Reuse the same bounded wait for a loading manual snippet.
+const waitForReady = () => {
+  const deadline = now() + 10000;
   const check = () => {
     if (copy('thradTag.__thradTag') === true) return finish(true);
-    if (!remaining--) return finish(false);
-    call('setTimeout', check, 100);
+    if (now() >= deadline) return finish(false);
+    later(check);
   };
   check();
+};
+if (existing) {
+  // The manual snippet owns its script request. Never insert another SDK.
+  waitForReady();
 } else {
   inject('https://cdn.thrad.ai/tag.min.js',
-    () => finish(copy('thradTag.__thradTag') === true),
+    waitForReady,
     () => finish(false), 'thrad-web-sdk');
 }
 
@@ -570,45 +574,6 @@ ___WEB_PERMISSIONS___
                   {
                     "type": 8,
                     "boolean": false
-                  }
-                ]
-              },
-              {
-                "type": 3,
-                "mapKey": [
-                  {
-                    "type": 1,
-                    "string": "key"
-                  },
-                  {
-                    "type": 1,
-                    "string": "read"
-                  },
-                  {
-                    "type": 1,
-                    "string": "write"
-                  },
-                  {
-                    "type": 1,
-                    "string": "execute"
-                  }
-                ],
-                "mapValue": [
-                  {
-                    "type": 1,
-                    "string": "setTimeout"
-                  },
-                  {
-                    "type": 8,
-                    "boolean": false
-                  },
-                  {
-                    "type": 8,
-                    "boolean": false
-                  },
-                  {
-                    "type": 8,
-                    "boolean": true
                   }
                 ]
               },
@@ -836,59 +801,492 @@ ___WEB_PERMISSIONS___
   }
 ]
 
+
 ___TESTS___
 
-scenarios: [
-  {
-    "name": "Concurrent loader preserves early payload and completes each firing once",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nrunCode({ tagId: 'account-a', mode: 'event', eventType: 'lead', eventId: 'lead:1', parameters: [{ key: 'quantity', value: 0 }] });\nrunCode({ tagId: 'account-b', mode: 'install' });\nassertThat(injections).hasLength(1);\nassertThat(injections[0].url).isEqualTo('https://cdn.thrad.ai/tag.min.js');\nassertThat(successes).isEqualTo(0);\nconst event = globals.thradTag.q.filter((entry) => entry[0] === 'event')[0];\nassertThat(event[2]).isEqualTo({ event_id: 'lead:1', quantity: 0, send_to: 'account-a' });\nassertThat(globals.thradTag.q.filter((entry) => entry[0] === 'event' && entry[1] === 'page_viewed')).hasLength(0);\nready(); injections[0].success(); injections[0].success();\nassertThat(successes).isEqualTo(2); assertThat(failures).isEqualTo(0);"
-  },
-  {
-    "name": "Ready manual SDK is reused without a new script or page view",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nstub(); ready();\nrunCode({ tagId: 'account-a' });\nassertThat(injections).hasLength(0); assertThat(successes).isEqualTo(1);\nassertThat(globals.thradTag.q.filter((entry) => entry[0] === 'event')).hasLength(0);"
-  },
-  {
-    "name": "Pending manual queue is preserved while waiting for readiness",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nstub(); globals.thradTag('event', 'page_viewed', { send_to: 'manual' });\nrunCode({ tagId: 'account-a' });\nassertThat(injections).hasLength(0); assertThat(successes).isEqualTo(0);\nassertThat(globals.thradTag.q[0]).isEqualTo(['event', 'page_viewed', { send_to: 'manual' }]);\nready(); timers.shift()();\nassertThat(successes).isEqualTo(1);"
-  },
-  {
-    "name": "SDK load failure completes every waiter once",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nrunCode({ tagId: 'account-a' }); runCode({ tagId: 'account-b' });\ninjections[0].failure(); injections[0].failure(); injections[0].success();\nassertThat(failures).isEqualTo(2); assertThat(successes).isEqualTo(0);"
-  },
-  {
-    "name": "Invalid Tag ID fails before SDK or global access",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nrunCode({ tagId: '   ' });\nassertThat(failures).isEqualTo(1); assertThat(injections).hasLength(0);\nassertApi('createArgumentsQueue').wasNotCalled();"
-  },
-  {
-    "name": "Denial prevents loading and grant resumes installation without event replay",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nconsent.ad_storage = false;\nrunCode({ tagId: 'account-a' });\nrunCode({ tagId: 'account-a', mode: 'event', eventType: 'purchase', orderId: 'order-1', value: 0, currency: 'USD' });\nassertThat(injections).hasLength(0);\nassertThat(globals.thradTagGtmConsent.measurement).isFalse();\nupdate('ad_storage', true);\nassertThat(injections).hasLength(1);\nassertThat(globals.thradTag.q.filter((entry) => entry[0] === 'event')).hasLength(0);\nready(); injections[0].success();\nassertThat(successes).isEqualTo(2);"
-  },
-  {
-    "name": "Withdrawal removes pending tracking and preserves personalization denial",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nconsent.ad_personalization = false;\nrunCode({ tagId: 'account-a', mode: 'event', eventType: 'lead', eventId: 'lead:1' });\nassertThat(globals.thradTagGtmConsent.personalization).isFalse();\nupdate('analytics_storage', false); update('analytics_storage', true);\nassertThat(globals.thradTagGtmConsent.revision).isEqualTo(1);\nassertThat(globals.thradTag.q.filter((entry) => entry[0] === 'event')).hasLength(0);\nready(); injections[0].success();\nassertThat(successes).isEqualTo(1);"
-  },
-  {
-    "name": "Script callback without SDK readiness is failure rather than receipt proof",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nrunCode({ tagId: 'account-a' }); injections[0].success();\nassertThat(failures).isEqualTo(1); assertThat(successes).isEqualTo(0);"
-  },
-  {
-    "name": "Purchase form keeps zero and order identity in the conversion command",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nrunCode({ tagId: 'account-a', mode: 'event', eventType: 'purchase', orderId: 123, value: 0, currency: 'usd' });\nconst call = globals.thradTag.q.filter((entry) => entry[0] === 'conversion')[0];\nassertThat(call[1]).isEqualTo({ order_id: '123', value: 0, currency: 'USD', send_to: 'account-a' });\nready(); injections[0].success(); assertThat(successes).isEqualTo(1);"
-  },
-  {
-    "name": "Lead form keeps submission identity without an order",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nrunCode({ tagId: 'account-a', mode: 'event', eventType: 'lead', eventId: 'lead:1' });\nconst call = globals.thradTag.q.filter((entry) => entry[0] === 'event')[0];\nassertThat(call[1]).isEqualTo('lead_created');\nassertThat(call[2]).isEqualTo({ event_id: 'lead:1', send_to: 'account-a' });"
-  },
-  {
-    "name": "Custom form preserves the supported custom name and identity",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nrunCode({ tagId: 'account-a', mode: 'event', eventType: 'custom', customEventName: 'Quote-Requested', customEventId: 'quote:1' });\nconst call = globals.thradTag.q.filter((entry) => entry[0] === 'event')[0];\nassertThat(call[1]).isEqualTo('quote-requested');\nassertThat(call[2]).isEqualTo({ event_id: 'quote:1', send_to: 'account-a' });"
-  },
-  {
-    "name": "Invalid business fields and parameter collisions never dispatch",
-    "code": "const globals = {};\nconst memory = {};\nconst callbacks = {};\nconst consent = {};\nconst timers = [];\nconst injections = [];\nlet successes = 0;\nlet failures = 0;\nmock('gtmOnSuccess', () => successes++);\nmock('gtmOnFailure', () => failures++);\nmockObject('templateStorage', {\n  getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }\n});\nmock('isConsentGranted', (name) => consent[name] !== false);\nmock('addConsentListener', (name, callback) => { callbacks[name] = callback; });\nmock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));\nmock('setInWindow', (path, value) => {\n  const parts = path.split('.'); const last = parts.pop();\n  parts.reduce((value, key) => value[key], globals)[last] = value;\n  return true;\n});\nconst stub = () => {\n  const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];\n  globals.thradTag = fn; return fn;\n};\nmock('createArgumentsQueue', stub);\nmock('callInWindow', (path, a, b, c) => {\n  if (path === 'setTimeout') { timers.push(a); return 1; }\n  globals.thradTag(a, b, c);\n});\nmock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));\nconst ready = () => { globals.thradTag.__thradTag = true; };\nconst update = (name, value) => { consent[name] = value; callbacks[name](name, value); };\nrunCode({ tagId: 'account-a', mode: 'event', eventType: 'purchase', orderId: '', value: 0, currency: 'USD' });\nrunCode({ tagId: 'account-a', mode: 'event', eventType: 'lead', eventId: 'lead:1', parameters: [{ key: 'event_id', value: 'replacement' }] });\nassertThat(failures).isEqualTo(2); assertThat(injections).hasLength(0);\nassertApi('createArgumentsQueue').wasNotCalled();"
-  }
-]
+scenarios:
+- name: Concurrent loader preserves early payload and completes each firing once
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'lead', eventId: 'lead:1', parameters: [{ key: 'quantity', value: 0 }] });
+    runCode({ tagId: 'account-b', mode: 'install' });
+    assertThat(injections).hasLength(1);
+    assertThat(injections[0].url).isEqualTo('https://cdn.thrad.ai/tag.min.js');
+    assertApi('gtmOnSuccess').wasNotCalled();
+    const event = globals.thradTag.q.filter((entry) => entry[0] === 'event')[0];
+    assertThat(event[2]).isEqualTo({ event_id: 'lead:1', quantity: 0, send_to: 'account-a' });
+    assertThat(globals.thradTag.q.filter((entry) => entry[0] === 'event' && entry[1] === 'page_viewed')).hasLength(0);
+    injections[0].success();
+    assertApi('gtmOnSuccess').wasNotCalled();
+    ready(); timers.shift()(); injections[0].success();
+    assertApi('gtmOnSuccess').wasCalled(); assertApi('gtmOnFailure').wasNotCalled();
+- name: Ready manual SDK is reused without a new script or page view
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    stub(); ready();
+    runCode({ tagId: 'account-a' });
+    assertThat(injections).hasLength(0); assertApi('gtmOnSuccess').wasCalled();
+    assertThat(globals.thradTag.q.filter((entry) => entry[0] === 'event')).hasLength(0);
+- name: Pending manual queue is preserved while waiting for readiness
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    stub(); globals.thradTag('event', 'page_viewed', { send_to: 'manual' });
+    runCode({ tagId: 'account-a' });
+    assertThat(injections).hasLength(0); assertApi('gtmOnSuccess').wasNotCalled();
+    assertThat(globals.thradTag.q[0]).isEqualTo(['event', 'page_viewed', { send_to: 'manual' }]);
+    ready(); timers.shift()();
+    assertApi('gtmOnSuccess').wasCalled();
+- name: SDK load failure completes every waiter once
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    runCode({ tagId: 'account-a' }); runCode({ tagId: 'account-b' });
+    injections[0].failure(); injections[0].failure(); injections[0].success();
+    assertApi('gtmOnFailure').wasCalled(); assertApi('gtmOnSuccess').wasNotCalled();
+- name: Invalid Tag ID fails before SDK or global access
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    runCode({ tagId: '   ' });
+    assertApi('gtmOnFailure').wasCalled(); assertThat(injections).hasLength(0);
+    assertApi('createArgumentsQueue').wasNotCalled();
+- name: Denial prevents loading and grant resumes installation without event replay
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    consent.ad_storage = false;
+    runCode({ tagId: 'account-a' });
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'purchase', orderId: 'order-1', value: 0, currency: 'USD' });
+    assertThat(injections).hasLength(0);
+    assertThat(globals.thradTagGtmConsent.measurement).isFalse();
+    update('ad_storage', true);
+    assertThat(injections).hasLength(1);
+    assertThat(globals.thradTag.q.filter((entry) => entry[0] === 'event')).hasLength(0);
+    ready(); injections[0].success();
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Withdrawal removes pending tracking and preserves personalization denial
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    consent.ad_personalization = false;
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'lead', eventId: 'lead:1' });
+    assertThat(globals.thradTagGtmConsent.personalization).isFalse();
+    update('analytics_storage', false); update('analytics_storage', true);
+    assertThat(globals.thradTagGtmConsent.revision).isEqualTo(1);
+    assertThat(globals.thradTag.q.filter((entry) => entry[0] === 'event')).hasLength(0);
+    ready(); injections[0].success();
+    assertApi('gtmOnSuccess').wasCalled();
+- name: Script callback without SDK readiness is failure rather than receipt proof
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    runCode({ tagId: 'account-a' }); injections[0].success();
+    while (timers.length) timers.shift()();
+    assertApi('gtmOnFailure').wasCalled(); assertApi('gtmOnSuccess').wasNotCalled();
+- name: Purchase form keeps zero and order identity in the conversion command
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'purchase', orderId: 123, value: 0, currency: 'usd' });
+    const call = globals.thradTag.q.filter((entry) => entry[0] === 'conversion')[0];
+    assertThat(call[1]).isEqualTo({ order_id: '123', value: 0, currency: 'USD', send_to: 'account-a' });
+    ready(); injections[0].success(); assertApi('gtmOnSuccess').wasCalled();
+- name: Lead form keeps submission identity without an order
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'lead', eventId: 'lead:1' });
+    const call = globals.thradTag.q.filter((entry) => entry[0] === 'event')[0];
+    assertThat(call[1]).isEqualTo('lead_created');
+    assertThat(call[2]).isEqualTo({ event_id: 'lead:1', send_to: 'account-a' });
+- name: Custom form preserves the supported custom name and identity
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'custom', customEventName: 'Quote-Requested', customEventId: 'quote:1' });
+    const call = globals.thradTag.q.filter((entry) => entry[0] === 'event')[0];
+    assertThat(call[1]).isEqualTo('quote-requested');
+    assertThat(call[2]).isEqualTo({ event_id: 'quote:1', send_to: 'account-a' });
+- name: Invalid business fields and parameter collisions never dispatch
+  code: |-
+    const globals = {};
+    const memory = {};
+    const callbacks = {};
+    const consent = {};
+    const timers = []; let clock = 0;
+    mock('getTimestampMillis', () => clock);
+    mock('callLater', (callback) => timers.push(() => { clock += 100; callback(); }));
+    const injections = [];
+
+
+    mockObject('templateStorage', {
+      getItem: (key) => memory[key], setItem: (key, value) => { memory[key] = value; }
+    });
+    mock('isConsentGranted', (name) => consent[name] !== false);
+    mock('addConsentListener', (name, callback) => { callbacks[name] = callback; });
+    mock('copyFromWindow', (path) => path.split('.').reduce((value, key) => value && value[key], globals));
+    mock('setInWindow', (path, value) => {
+      const parts = path.split('.'); const last = parts.pop();
+      parts.reduce((value, key) => value[key], globals)[last] = value;
+      return true;
+    });
+    const stub = () => {
+      const fn = (a, b, c) => fn.q.push([a, b, c]); fn.q = [];
+      globals.thradTag = fn; return fn;
+    };
+    mock('createArgumentsQueue', stub);
+    mock('callInWindow', (path, a, b, c) => {
+      globals.thradTag(a, b, c);
+    });
+    mock('injectScript', (url, success, failure) => injections.push({ url: url, success: success, failure: failure }));
+    const ready = () => { globals.thradTag.__thradTag = true; };
+    const update = (name, value) => { consent[name] = value; callbacks[name](name, value); };
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'purchase', orderId: '', value: 0, currency: 'USD' });
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'lead', eventId: 'lead:1', parameters: [{ key: 'event_id', value: 'replacement' }] });
+    assertApi('gtmOnFailure').wasCalled(); assertThat(injections).hasLength(0);
+    assertApi('createArgumentsQueue').wasNotCalled();
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'purchase', orderId: 'order-1', value: '1.2.3', currency: 'USD' });
+    runCode({ tagId: 'account-a', mode: 'event', eventType: 'purchase', orderId: 'order-1', value: 0, currency: 'US1' });
+    ['-bad', 'bad!', 'purchase-completed'].forEach((name) => runCode({ tagId: 'account-a', mode: 'event', eventType: 'custom', customEventId: 'custom:1', customEventName: name }));
+    assertApi('createArgumentsQueue').wasNotCalled();
+    assertThat(injections).hasLength(0);
+
 
 ___NOTES___
 
 Mocked template tests establish loader behavior, not Google permission enforcement, durable receipt or provider acceptance. Run the release checklist in a real GTM container before distribution.
+
+
