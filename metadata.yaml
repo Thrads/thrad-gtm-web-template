@@ -2,4 +2,4 @@ homepage: "https://thrad.ai"
 documentation: "https://github.com/Thrads/thrad-gtm-web-template/blob/3de93f858fe85c9422dfd6f78438a3885b7712be/README.md"
 versions:
   - sha: 3de93f858fe85c9422dfd6f78438a3885b7712be
-    changeNotes: "Google import and 12 editor scenarios verified; controlled pilot candidate pending compatible SDK deployment."
+    changeNotes: "Initial controlled pilot: Google import/export and 12 editor scenarios verified against the deployed compatible SDK."
