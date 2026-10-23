@@ -1,5 +1,7 @@
 homepage: "https://thrad.ai"
-documentation: "https://github.com/Thrads/thrad-gtm-web-template/blob/3de93f858fe85c9422dfd6f78438a3885b7712be/README.md"
+documentation: "https://github.com/Thrads/thrad-gtm-web-template/blob/6830dc6bf69c4c6d49a8f21e96b8d197d9fd6b65/README.md"
 versions:
+  - sha: 6830dc6bf69c4c6d49a8f21e96b8d197d9fd6b65
+    changeNotes: "Correct category-specific fields and consent bridge permissions; real GTM Preview loading, consent and event cases verified."
   - sha: 3de93f858fe85c9422dfd6f78438a3885b7712be
     changeNotes: "Initial controlled pilot: Google import/export and 12 editor scenarios verified against the deployed compatible SDK."

@@ -9,11 +9,11 @@ Both the initial setup prompt and the persistent Setup tab reach this flow.
 
 ## Pilot release
 
-Use [v0.1.0-pilot.1](https://github.com/Thrads/thrad-gtm-web-template/releases/tag/v0.1.0-pilot.1):
-[template.tpl](https://github.com/Thrads/thrad-gtm-web-template/releases/download/v0.1.0-pilot.1/template.tpl),
-[SHA256SUMS](https://github.com/Thrads/thrad-gtm-web-template/releases/download/v0.1.0-pilot.1/SHA256SUMS),
-and [acceptance record](https://github.com/Thrads/thrad-gtm-web-template/releases/download/v0.1.0-pilot.1/acceptance.md).
-The template SHA-256 is `053477af925a04bdbafb37472943e551f86a4068249b19c884727074f07bc63b`.
+Use [v0.1.0-pilot.2](https://github.com/Thrads/thrad-gtm-web-template/releases/tag/v0.1.0-pilot.2):
+[template.tpl](https://github.com/Thrads/thrad-gtm-web-template/releases/download/v0.1.0-pilot.2/template.tpl),
+[SHA256SUMS](https://github.com/Thrads/thrad-gtm-web-template/releases/download/v0.1.0-pilot.2/SHA256SUMS),
+and [acceptance record](https://github.com/Thrads/thrad-gtm-web-template/releases/download/v0.1.0-pilot.2/acceptance.md).
+The template SHA-256 is `2a91b552385452f1cd67c069ebb57b3f4c09c75b572802db0db67c17175c365d`.
 Download the template and checksum into one directory, then run:
 
 ```sh
