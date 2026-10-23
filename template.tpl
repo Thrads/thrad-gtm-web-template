@@ -50,202 +50,173 @@ ___TEMPLATE_PARAMETERS___
     ]
   },
   {
-    "type": "SELECT",
-    "name": "eventType",
-    "displayName": "Event",
-    "simpleValueType": true,
-    "defaultValue": "purchase",
-    "selectItems": [
-      {
-        "value": "purchase",
-        "displayValue": "Purchase"
-      },
-      {
-        "value": "lead",
-        "displayValue": "Lead"
-      },
-      {
-        "value": "custom",
-        "displayValue": "Custom"
-      }
-    ],
+    "type": "GROUP",
+    "name": "eventSettings",
+    "displayName": "Event settings",
+    "groupStyle": "NO_ZIPPY",
     "enablingConditions": [
       {
         "paramName": "mode",
         "paramValue": "event",
         "type": "EQUALS"
       }
-    ]
-  },
-  {
-    "type": "TEXT",
-    "name": "orderId",
-    "displayName": "Order ID",
-    "simpleValueType": true,
-    "valueValidators": [
-      {
-        "type": "NON_EMPTY"
-      }
     ],
-    "enablingConditions": [
+    "subParams": [
       {
-        "paramName": "mode",
-        "paramValue": "event",
-        "type": "EQUALS"
+        "type": "SELECT",
+        "name": "eventType",
+        "displayName": "Event",
+        "simpleValueType": true,
+        "defaultValue": "purchase",
+        "selectItems": [
+          {
+            "value": "purchase",
+            "displayValue": "Purchase"
+          },
+          {
+            "value": "lead",
+            "displayValue": "Lead"
+          },
+          {
+            "value": "custom",
+            "displayValue": "Custom"
+          }
+        ]
       },
-      {
-        "paramName": "eventType",
-        "paramValue": "purchase",
-        "type": "EQUALS"
-      }
-    ],
-    "help": "Map the stable transaction/order ID. Numeric IDs must be safe integers; string IDs retain their original identity."
-  },
-  {
-    "type": "TEXT",
-    "name": "value",
-    "displayName": "Order value",
-    "simpleValueType": true,
-    "valueValidators": [
-      {
-        "type": "NON_EMPTY"
-      }
-    ],
-    "enablingConditions": [
-      {
-        "paramName": "mode",
-        "paramValue": "event",
-        "type": "EQUALS"
-      },
-      {
-        "paramName": "eventType",
-        "paramValue": "purchase",
-        "type": "EQUALS"
-      }
-    ],
-    "help": "Major currency units, for example 25.99. Zero is valid."
-  },
-  {
-    "type": "TEXT",
-    "name": "currency",
-    "displayName": "Currency",
-    "simpleValueType": true,
-    "valueValidators": [
-      {
-        "type": "NON_EMPTY"
-      }
-    ],
-    "enablingConditions": [
-      {
-        "paramName": "mode",
-        "paramValue": "event",
-        "type": "EQUALS"
-      },
-      {
-        "paramName": "eventType",
-        "paramValue": "purchase",
-        "type": "EQUALS"
-      }
-    ],
-    "help": "Three-letter currency, for example USD."
-  },
-  {
-    "type": "TEXT",
-    "name": "eventId",
-    "displayName": "Event ID",
-    "simpleValueType": true,
-    "valueValidators": [
-      {
-        "type": "NON_EMPTY"
-      }
-    ],
-    "enablingConditions": [
-      {
-        "paramName": "mode",
-        "paramValue": "event",
-        "type": "EQUALS"
-      },
-      {
-        "paramName": "eventType",
-        "paramValue": "lead",
-        "type": "EQUALS"
-      }
-    ],
-    "help": "Reuse the submission ID on retries. No order ID is required."
-  },
-  {
-    "type": "TEXT",
-    "name": "customEventId",
-    "displayName": "Event ID",
-    "simpleValueType": true,
-    "valueValidators": [
-      {
-        "type": "NON_EMPTY"
-      }
-    ],
-    "enablingConditions": [
-      {
-        "paramName": "mode",
-        "paramValue": "event",
-        "type": "EQUALS"
-      },
-      {
-        "paramName": "eventType",
-        "paramValue": "custom",
-        "type": "EQUALS"
-      }
-    ],
-    "help": "Reuse this event ID on retries."
-  },
-  {
-    "type": "TEXT",
-    "name": "customEventName",
-    "displayName": "Custom event name",
-    "simpleValueType": true,
-    "valueValidators": [
-      {
-        "type": "NON_EMPTY"
-      }
-    ],
-    "enablingConditions": [
-      {
-        "paramName": "mode",
-        "paramValue": "event",
-        "type": "EQUALS"
-      },
-      {
-        "paramName": "eventType",
-        "paramValue": "custom",
-        "type": "EQUALS"
-      }
-    ],
-    "help": "Use the existing configured custom-event policy; no provider mapping is created here."
-  },
-  {
-    "type": "SIMPLE_TABLE",
-    "name": "parameters",
-    "displayName": "Event parameters",
-    "simpleTableColumns": [
       {
         "type": "TEXT",
-        "name": "key",
-        "displayName": "Parameter name",
-        "isUnique": true
+        "name": "orderId",
+        "displayName": "Order ID",
+        "simpleValueType": true,
+        "valueValidators": [
+          {
+            "type": "NON_EMPTY"
+          }
+        ],
+        "enablingConditions": [
+          {
+            "paramName": "eventType",
+            "paramValue": "purchase",
+            "type": "EQUALS"
+          }
+        ],
+        "help": "Map the stable transaction/order ID. Numeric IDs must be safe integers; string IDs retain their original identity."
       },
       {
         "type": "TEXT",
         "name": "value",
-        "displayName": "Value"
-      }
-    ],
-    "enablingConditions": [
+        "displayName": "Order value",
+        "simpleValueType": true,
+        "valueValidators": [
+          {
+            "type": "NON_EMPTY"
+          }
+        ],
+        "enablingConditions": [
+          {
+            "paramName": "eventType",
+            "paramValue": "purchase",
+            "type": "EQUALS"
+          }
+        ],
+        "help": "Major currency units, for example 25.99. Zero is valid."
+      },
       {
-        "paramName": "mode",
-        "paramValue": "event",
-        "type": "EQUALS"
+        "type": "TEXT",
+        "name": "currency",
+        "displayName": "Currency",
+        "simpleValueType": true,
+        "valueValidators": [
+          {
+            "type": "NON_EMPTY"
+          }
+        ],
+        "enablingConditions": [
+          {
+            "paramName": "eventType",
+            "paramValue": "purchase",
+            "type": "EQUALS"
+          }
+        ],
+        "help": "Three-letter currency, for example USD."
+      },
+      {
+        "type": "TEXT",
+        "name": "eventId",
+        "displayName": "Event ID",
+        "simpleValueType": true,
+        "valueValidators": [
+          {
+            "type": "NON_EMPTY"
+          }
+        ],
+        "enablingConditions": [
+          {
+            "paramName": "eventType",
+            "paramValue": "lead",
+            "type": "EQUALS"
+          }
+        ],
+        "help": "Reuse the submission ID on retries. No order ID is required."
+      },
+      {
+        "type": "TEXT",
+        "name": "customEventId",
+        "displayName": "Event ID",
+        "simpleValueType": true,
+        "valueValidators": [
+          {
+            "type": "NON_EMPTY"
+          }
+        ],
+        "enablingConditions": [
+          {
+            "paramName": "eventType",
+            "paramValue": "custom",
+            "type": "EQUALS"
+          }
+        ],
+        "help": "Reuse this event ID on retries."
+      },
+      {
+        "type": "TEXT",
+        "name": "customEventName",
+        "displayName": "Custom event name",
+        "simpleValueType": true,
+        "valueValidators": [
+          {
+            "type": "NON_EMPTY"
+          }
+        ],
+        "enablingConditions": [
+          {
+            "paramName": "eventType",
+            "paramValue": "custom",
+            "type": "EQUALS"
+          }
+        ],
+        "help": "Use the existing configured custom-event policy; no provider mapping is created here."
+      },
+      {
+        "type": "SIMPLE_TABLE",
+        "name": "parameters",
+        "displayName": "Event parameters",
+        "simpleTableColumns": [
+          {
+            "type": "TEXT",
+            "name": "key",
+            "displayName": "Parameter name",
+            "isUnique": true
+          },
+          {
+            "type": "TEXT",
+            "name": "value",
+            "displayName": "Value"
+          }
+        ],
+        "help": "Optional business fields: product_id, content_id, content_name, content_type, quantity, items, contents, cart_id, plan_id. Use dedicated fields for identity/value/currency. Customer identity and credentials are not supported."
       }
-    ],
-    "help": "Optional business fields: product_id, content_id, content_name, content_type, quantity, items, contents, cart_id, plan_id. Use dedicated fields for identity/value/currency. Customer identity and credentials are not supported."
+    ]
   }
 ]
 
@@ -604,7 +575,7 @@ ___WEB_PERMISSIONS___
                   },
                   {
                     "type": 8,
-                    "boolean": false
+                    "boolean": true
                   },
                   {
                     "type": 8,
